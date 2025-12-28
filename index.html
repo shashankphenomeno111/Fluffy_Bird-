@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Flappy Bird Ultra</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:#111;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+  font-family:Arial,Helvetica,sans-serif;
+  user-select:none;
+}
+#gameContainer{position:relative;text-align:center}
+canvas{
+  border:4px solid #333;
+  border-radius:12px;
+  background:#70c5ce;
+}
+#menuBox{
+  position:absolute;
+  top:15%;
+  left:50%;
+  transform:translateX(-50%);
+  background:rgba(0,0,0,.85);
+  color:#fff;
+  padding:20px;
+  width:320px;
+  border-radius:12px;
+  z-index:5;
+}
+button{
+  margin:6px;
+  padding:8px 14px;
+  border:none;
+  border-radius:6px;
+  cursor:pointer;
+  background:#ffeb3b;
+}
+button:hover{background:#ffc107}
+.active{outline:2px solid #fff}
+</style>
+</head>
+
+<body>
+<div id="gameContainer">
+  <div id="menuBox">
+    <h2>Flappy Bird Ultra</h2><br>
+    <div>Difficulty</div>
+    <button onclick="setDifficulty('easy')" id="easy">Easy</button>
+    <button onclick="setDifficulty('medium')" id="medium">Medium</button>
+    <button onclick="setDifficulty('hard')" id="hard">Hard</button><br><br>
+    <button onclick="startGame()">▶ Start</button>
+    <p style="font-size:12px;margin-top:10px;color:#aaa">
+      SPACE / CLICK to jump
+    </p>
+  </div>
+
+  <canvas id="game" width="400" height="600"></canvas>
+</div>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+const W=canvas.width,H=canvas.height;
+
+/* ---------- GAME STATE ---------- */
+let state="menu";
+let score=0,highScore=localStorage.flappyUltra||0;
+let combo=0,shield=false,slowTimer=0;
+let shake=0,flash=0,overFade=0;
+
+/* ---------- DIFFICULTY ---------- */
+const diff={
+ easy:{g:.3,s:2,gap:180},
+ medium:{g:.38,s:2.8,gap:150},
+ hard:{g:.45,s:3.4,gap:130}
+};
+let current=diff.easy;
+
+/* ---------- BIRD ---------- */
+const bird={
+ x:80,y:H/2,r:16,vy:0,
+ jump:-7
+};
+
+/* ---------- PIPES ---------- */
+const pipes=[],pipeW=60;
+
+/* ---------- CLOUDS ---------- */
+const clouds=[];
+for(let i=0;i<6;i++){
+ clouds.push({
+  x:Math.random()*W,
+  y:Math.random()*200,
+  w:50+Math.random()*40,
+  h:20+Math.random()*10,
+  s:Math.random()<.5?.25:.6
+ });
+}
+
+/* ---------- FLOAT TEXT ---------- */
+const floats=[];
+
+/* ---------- CONTROLS ---------- */
+document.addEventListener("keydown",e=>{
+ if(e.code==="Space"){e.preventDefault();jump();}
+});
+canvas.onclick=jump;
+
+/* ---------- FUNCTIONS ---------- */
+function setDifficulty(d){
+ current=diff[d];
+ ["easy","medium","hard"].forEach(id=>document.getElementById(id).classList.remove("active"));
+ document.getElementById(d).classList.add("active");
+}
+
+function startGame(){
+ state="play";
+ document.getElementById("menuBox").style.display="none";
+ reset();
+}
+
+function reset(){
+ bird.y=H/2;bird.vy=0;
+ pipes.length=0;
+ score=0;combo=0;
+ shield=false;slowTimer=0;
+ overFade=0;
+ spawnPipe();
+}
+
+function spawnPipe(){
+ const top=Math.random()*(H-current.gap-140)+60;
+ pipes.push({x:W,top,passed:false});
+ if(Math.random()<.4){
+  floats.push({x:W+30,y:top+current.gap/2,t:"🛡",a:1,type:"shield"});
+ }
+}
+
+function jump(){
+ if(state==="play") bird.vy=bird.jump;
+ else if(state==="over"){reset();state="play";}
+}
+
+function gameOver(){
+ if(state!=="play")return;
+ shake=20;flash=15;
+ state="over";
+ highScore=Math.max(highScore,score);
+ localStorage.flappyUltra=highScore;
+}
+
+function update(){
+ if(state==="play"){
+  bird.vy+=current.g;
+  bird.y+=bird.vy;
+
+  if(bird.y>H-40-bird.r) gameOver();
+  if(bird.y<bird.r){bird.y=bird.r;bird.vy=0}
+
+  let speed=current.s*(slowTimer>0?.6:1);
+
+  pipes.forEach(p=>{
+   p.x-=speed;
+   let hitX=bird.x+bird.r>p.x && bird.x-bird.r<p.x+pipeW;
+   let hitY=bird.y-bird.r<p.top || bird.y+bird.r>p.top+current.gap;
+   if(hitX&&hitY){
+    if(shield){shield=false;shake=10}
+    else gameOver();
+   }
+   if(!p.passed&&p.x+pipeW<bird.x){
+    p.passed=true;
+    combo++;
+    score+=combo>3?2:1;
+    floats.push({x:bird.x,y:bird.y-20,t:`+${combo>3?2:1}`,a:1});
+   }
+  });
+
+  if(pipes[0]&&pipes[0].x+pipeW<0)pipes.shift();
+  if(pipes.length<3)spawnPipe();
+
+  clouds.forEach(c=>{
+   c.x-=c.s;
+   if(c.x+c.w<0)c.x=W+50;
+  });
+
+  floats.forEach(f=>{
+   f.y-=1;
+   f.a-=.02;
+   if(f.type==="shield"&&Math.hypot(bird.x-f.x,bird.y-f.y)<bird.r+10){
+    shield=true;f.a=0;flash=8;
+   }
+  });
+
+  slowTimer=Math.max(0,slowTimer-1);
+ }
+ draw();
+ requestAnimationFrame(update);
+}
+
+/* ---------- DRAW ---------- */
+function draw(){
+ if(shake>0){
+  ctx.save();
+  ctx.translate((Math.random()-.5)*8,(Math.random()-.5)*8);
+  shake--;
+ }
+
+ // Sky
+ let g=ctx.createLinearGradient(0,0,0,H);
+ g.addColorStop(0,"#4facfe");
+ g.addColorStop(1,"#00f2fe");
+ ctx.fillStyle=g;
+ ctx.fillRect(0,0,W,H);
+
+ // Clouds
+ clouds.forEach(c=>{
+  ctx.fillStyle=c.s<.4?"rgba(255,255,255,.4)":"rgba(255,255,255,.8)";
+  ctx.beginPath();
+  ctx.ellipse(c.x,c.y,c.w/2,c.h/2,0,0,Math.PI*2);
+  ctx.fill();
+ });
+
+ // Pipes
+ ctx.fillStyle="#4caf50";
+ pipes.forEach(p=>{
+  ctx.fillRect(p.x,0,pipeW,p.top);
+  ctx.fillRect(p.x,p.top+current.gap,pipeW,H-p.top-current.gap-40);
+ });
+
+ // Bird (tilt)
+ ctx.save();
+ ctx.translate(bird.x,bird.y);
+ ctx.rotate(Math.min(bird.vy/10,.5));
+ ctx.translate(-bird.x,-bird.y);
+ ctx.fillStyle="#ffeb3b";
+ ctx.beginPath();
+ ctx.arc(bird.x,bird.y,bird.r,0,Math.PI*2);
+ ctx.fill();
+ ctx.restore();
+
+ // Ground
+ ctx.fillStyle="#ded893";
+ ctx.fillRect(0,H-40,W,40);
+
+ // HUD
+ ctx.fillStyle="#fff";
+ ctx.font="20px Arial";
+ ctx.fillText("Score "+score,10,28);
+ ctx.fillText("Best "+highScore,W-110,28);
+ if(combo>=3)ctx.fillText("COMBO x"+combo,W/2-50,60);
+ if(shield)ctx.fillText("🛡",W/2-10,90);
+
+ // Floating text
+ floats.forEach(f=>{
+  ctx.globalAlpha=f.a;
+  ctx.fillText(f.t,f.x,f.y);
+  ctx.globalAlpha=1;
+ });
+
+ // Over screen
+ if(state==="over"){
+  overFade=Math.min(overFade+.03,1);
+  ctx.fillStyle=`rgba(0,0,0,${.6*overFade})`;
+  ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="#fff";
+  ctx.font="30px Arial";
+  ctx.fillText("GAME OVER",W/2-95,H/2-30);
+  ctx.font="18px Arial";
+  ctx.fillText("Click / SPACE to restart",W/2-115,H/2+20);
+ }
+
+ if(flash>0){
+  ctx.fillStyle="rgba(255,255,255,.3)";
+  ctx.fillRect(0,0,W,H);
+  flash--;
+ }
+
+ if(shake>=0)ctx.restore();
+}
+
+/* ---------- START ---------- */
+setDifficulty("easy");
+update();
+</script>
+</body>
+</html>
